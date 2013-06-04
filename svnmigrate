@@ -12,33 +12,50 @@
 
 cd ~/svn/
 
-#empty out any previous conversion data
-if [ -a temp/ ]
-then
-  rm -rf temp/
+#Check if there is a pending run in progress
+if ! [ -a svnmigrate.lock ]; then
+  #create the target directory and move to it
+  mkdir temp/
+  cd temp/
+
+  #initialize a copy of repo
+  git svn init http://10.4.0.123/repos/$1 --username nick.olson --no-metadata
+
+  #set author conversion
+  git config svn.authorsfile ~/authors.txt
+else #there was an error
+  ##load the location of the last repository info
+  cd `cat ~/svn/svnmigrate.lock`
 fi
 
-#create the target directory and move to it
-mkdir temp/
-cd temp/
-
-#initialize a copy of repo
-git svn init http://10.4.0.123/repos/$1 --username nick.olson --no-metadata
-
-#set author conversion
-git config svn.authorsfile ~/authors.txt
-
-#pull the svn data
+#pull the svn data and translate logs
 git svn fetch
 
-#move data to a new git repo
-cd ..
-git clone temp/ $1
+#Check for errors
+if [ "$?" -eq "0" ]; then
+  #move data to a new git repo
+  cd ..
+  git clone temp/ $1
 
-#edit the remote
-cd $1
-sed -e "s/\/home\/nol83\/svn\/temp\//git@git.banno.com:svn-temp\/$1.git/" -i .git/config
+  #edit the remote
+  cd $1
+  sed -e "s/\/home\/nol83\/svn\/temp\//git@git.banno.com:svn-temp\/$1.git/" -i .git/config
 
-#once this is complete, push to remote
-git pull
-git push origin master
+  #once this is complete, push to remote
+  git pull
+  git push origin master
+
+  #check for errors
+  if [ "$?" -eq "0" ]; then
+    #remove lock file
+    rm svnmigrate.lock
+    #clear temp data
+    rm -rf temp/
+    exit 0
+  else
+    exit $?
+  fi
+else ##Errors from missing name in translation file, or other
+  pwd > ~/svn/svnmigrate.lock
+  exit $?
+fi
