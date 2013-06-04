@@ -1,5 +1,15 @@
 #!/bin/bash
 
+##Usage  'svnmigrate <reponame>'
+
+
+##To extract author names from a single repo, run from local checkout
+##svn log -q | awk -F '|' '/^r/ {sub("^ ", "", $2); sub(" $", "", $2); print $2" = "$2" <"$2">"}' | sort -u > authors-transform.txt
+
+##Translation needed from SVN format 'nol83 = nol83 <nol83>' to Git format 'nol83 = Nick Olson <nick.olson@banno.com>'
+
+###########################################################################
+
 cd ~/svn/
 
 #empty out any previous conversion data
@@ -16,7 +26,7 @@ cd temp/
 git svn init http://10.4.0.123/repos/$1 --username nick.olson --no-metadata
 
 #set author conversion
-git config svn.authorsfile ~/authors-transform.txt
+git config svn.authorsfile ~/authors.txt
 
 #pull the svn data
 git svn fetch
