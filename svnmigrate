@@ -1,0 +1,34 @@
+#!/bin/bash
+
+cd ~/svn/
+
+#empty out any previous conversion data
+if [ -a temp/ ]
+then
+  rm -rf temp/
+fi
+
+#create the target directory and move to it
+mkdir temp/
+cd temp/
+
+#initialize a copy of repo
+git svn init http://10.4.0.123/repos/$1 --username nick.olson --no-metadata
+
+#set author conversion
+git config svn.authorsfile ~/authors-transform.txt
+
+#pull the svn data
+git svn fetch
+
+#move data to a new git repo
+cd ..
+git clone temp/ $1
+
+#edit the remote
+cd $1
+sed -e "s/\/home\/nol83\/svn\/temp\//git@git.banno.com:svn-temp\/$1.git/" -i .git/config
+
+#once this is complete, push to remote
+git pull
+git push origin master
