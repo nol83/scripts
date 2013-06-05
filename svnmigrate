@@ -13,9 +13,34 @@
 cd ~/svn/
 
 #Check if there is a pending run in progress
-if ! [ -a svnmigrate.lock ]; then
+if [ -a svnmigrate.lock ]
+then
+  ##load the data from previous session
+  echo "Load"
+  dir="$(less "svnmigrate.lock" | awk 'BEGIN { FS = ":"}{print $2}')"
+  echo -n "Dir:" 
+  echo $dir
+  repo="$(less "svnmigrate.lock" | awk 'BEGIN { FS = ":"}{print $1}')"
+  echo -n "Repo:"
+  echo $repo
+  cd $dir
+else #no error, start fresh
+  #check if starts with digit repo name
+  if [[ "${1:0:1}" =~ ^[0-9]+$ ]]
+  then
+    echo "This repo starts with a digit and cannot be imported directly into GitLab. Please manually import after changing the repository name. [Ex. 1st to First]"
+    exit 1  
+  fi
+  #set repo name
+  repo=$1
+
   #create the target directory and move to it
+  if [-d temp ]
+  then
+    rm -rf temp/
+  fi
   mkdir temp/
+  #echo "Clear"
   cd temp/
 
   #initialize a copy of repo
@@ -23,39 +48,52 @@ if ! [ -a svnmigrate.lock ]; then
 
   #set author conversion
   git config svn.authorsfile ~/authors.txt
-else #there was an error
-  ##load the location of the last repository info
-  cd `cat ~/svn/svnmigrate.lock`
 fi
 
 #pull the svn data and translate logs
 git svn fetch
 
-#Check for errors
-if [ "$?" -eq "0" ]; then
-  #move data to a new git repo
+#Check for errors before moving on
+if [ "$?" -eq "0" ]
+then
+  #move SVN data to a new git repo
   cd ..
-  git clone temp/ $1
+  git clone temp/ $repo
+  
+  if [ "$?" -eq "0" ]
+  then
+    #edit the remote
+    cd $repo
+    sed -e "s/\/home\/nol83\/svn\/temp\//git@git.banno.com:svn-temp\/$repo.git/" -i .git/config
 
-  #edit the remote
-  cd $1
-  sed -e "s/\/home\/nol83\/svn\/temp\//git@git.banno.com:svn-temp\/$1.git/" -i .git/config
+    #push to remote
+    git pull
+    git push origin master
 
-  #once this is complete, push to remote
-  git pull
-  git push origin master
+    #check for errors
+    if [ "$?" -eq "0" ]
+    then
+      #remove lock file if it exists
+      if [ -a svnmigrate.lock ]
+      then
+        rm svnmigrate.lock
+      fi
 
-  #check for errors
-  if [ "$?" -eq "0" ]; then
-    #remove lock file
-    rm svnmigrate.lock
-    #clear temp data
-    rm -rf temp/
-    exit 0
+      #clear temp data
+      rm -rf temp/
+      exit 0
+    else
+      echo "Unable to connect to remote. Check that the remote repository exists and attempt to push to master manually. See following error for more information."
+      exit $?
+    fi
   else
-    exit $?
+    echo "Local clone failed."
+    rm -rf $repo
   fi
 else ##Errors from missing name in translation file, or other
-  pwd > ~/svn/svnmigrate.lock
+  echo "Error detected. Check STDOUT for more details."a
+  #create file to show where to begin on next run.
+  echo -n $repo > ~/svn/svnmigrate.lock
+  echo $dir >> ~/svn/svnmigrate.lock
   exit $?
 fi

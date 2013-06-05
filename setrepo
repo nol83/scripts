@@ -1,0 +1,38 @@
+#!/bin/bash 
+
+if [ "$(id -u)" != "0" ]; then
+        echo "Sorry, you are not root."
+        exit 1
+fi
+
+path=$1
+dest=/home/git/repositories/
+
+##get starting location
+
+pwd | start=$1
+
+##Set permissions
+chown -R git:git  $path
+chmod -R ug+rwX,o-rwx $path
+
+##Move to new location
+mv $path $dest
+
+##Import
+cd /home/git/gitlab/
+sudo -u git -H bundle exec rake gitlab:import:repos RAILS_ENV=production
+
+##Remove old hooks and put new hooks
+cd /home/git/repositories/$path/hooks
+rm gitolite-hooked gl-pre-git.hub-sample post-receive post-receive.mirrorpush update update.secondary.sample
+sudo -u git ln -sf /home/git/.gitolite/hooks/common/post-receive ./post-receive
+
+##delete created folder
+rm -rf /home/git/repositories/root/$path
+
+##move folder to root namespace for now with history intact
+mv /home/git/repositories/$path /home/git/repositories/root/
+
+##move back to starting location
+cd $start

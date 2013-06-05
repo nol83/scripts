@@ -1,0 +1,6 @@
+#!/bin/bash          
+
+rm -rf gitolite-hooked gl-pre-git.hub-sample post-recieve post-receive.mirrorpush update update.secondary.sample
+
+sudo -u git ln -sf /home/git/.gitolite/hooks/common/post-receive ./post-receive
+
