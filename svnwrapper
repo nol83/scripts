@@ -1,0 +1,21 @@
+#!/bin/bash
+
+#outer loop, handles entries in run list
+while read line
+do
+  svnmigrate $line
+  q=$?
+  #inner loop, handles retries
+  while [ "$q" -ne "0" ]
+  do
+    if [ "$q" -eq "53" ] #name error
+    then
+      svnmigrate $line
+    elif [ "$q" -eq "11" ] #remote error
+    then
+      exit $q
+    fi
+  done
+  sed -i '1d' ~/runlist
+done < ~/runlist
+echo "Run Complete"
