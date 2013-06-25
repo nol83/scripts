@@ -2,32 +2,69 @@
 
 ##Usage  'svnmigrate <reponame>'
 
+##Depends on packages 'git' and  'git-svn'
 
 ##To extract author names from a single repo, run from local checkout
 ##svn log -q | awk -F '|' '/^r/ {sub("^ ", "", $2); sub(" $", "", $2); print $2" = "$2" <"$2">"}' | sort -u > authors-transform.txt
 
 ##Translation needed from SVN format 'nol83 = nol83 <nol83>' to Git format 'nol83 = Nick Olson <nick.olson@banno.com>'
 
-###########################################################################
+##Requires the existence of the git repo on the remote git server prior to script execution, or at least prior to reaching that
+##part of the script.
 
-cd ~/svn/
+##Assumes SSH key installed on remote git server for user
 
-#Check if there is a pending run in progress
+##Assumes that SVN credentials are cached
+
+#############################
+####CONFIGURATION OPTIONS####
+#############################
+
+#Remove the local repo clone once its pushed to new server
+remove="Yes"
+
+#Username to use for SVN remote
+user="nol83"
+
+#URL of the SVN Server
+url="http://10.4.0.123/repos"
+
+#File to be used for author translation
+authorfile="$HOME/authors.txt"
+
+#Remote path of git repo to push converted files to
+remote="git@git.banno.com:svn-temp"
+
+#Domain of the email for author translation
+emaildomain="banno.com"
+
+##
+##
+##DO NOT MODIFY BELOW LINE UNLESS YOU KNOW WHAT YOU ARE DOING
+##
+##
+
+#Root of project
+rootdir="$HOME/svn/"
+#Temp folder location
+tempdir="$rootdir/temp/"
+##File to be used for Error log
+errorlog="$rootdir/errorlog"
+
+cd $rootdir
+
+#Check if there is a previous run in progress
 if [ -a svnmigrate.lock ]
 then
   ##load the data from previous session
-  echo "Load"
   dir="$(less "svnmigrate.lock" | awk 'BEGIN { FS = ":"}{print $2}')"
-  echo -n "Dir:" 
-  echo $dir
   repo="$(less "svnmigrate.lock" | awk 'BEGIN { FS = ":"}{print $1}')"
-  echo -n "Repo:"
-  echo $repo
   cd $dir
 else #no error, start fresh
   #check if starts with digit repo name
   if [[ "${1:0:1}" =~ ^[0-9]+$ ]]
   then
+    ###Add logic to replace numeric with text values.
     echo "This repo starts with a digit and cannot be imported directly into GitLab. Please manually import after changing the repository name. [Ex. 1st to First]"
     exit 1  
   fi
@@ -35,36 +72,36 @@ else #no error, start fresh
   repo=$1
 
   #create the target directory and move to it
-  if [-d temp ]
+  if [ -d $tempdir ] ##If it exits, it has old data and must be removed.
   then
-    rm -rf temp/
+    rm -rf $tempdir
   fi
-  mkdir temp/
-  #echo "Clear"
-  cd temp/
+  mkdir $tempdir
+  cd $tempdir
 
   #initialize a copy of repo
-  git svn init http://10.4.0.123/repos/$1 --username nick.olson --no-metadata
+  git svn init "$url/$repo" --username $user --no-metadata
 
   #set author conversion
-  git config svn.authorsfile ~/authors.txt
+  git config svn.authorsfile $authorfile
 fi
 
 #pull the svn data and translate logs
-git svn fetch
+git svn fetch --username $user 2> "$errorlog"
 
 #Check for errors before moving on
 if [ "$?" -eq "0" ]
 then
   #move SVN data to a new git repo
   cd ..
-  git clone temp/ $repo
+  git clone $tempdir $repo
   
   if [ "$?" -eq "0" ]
   then
     #edit the remote
     cd $repo
-    sed -e "s/\/home\/nol83\/svn\/temp\//git@git.banno.com:svn-temp\/$repo.git/" -i .git/config
+    #sed -e "s/\/home\/nol83\/svn\/temp\//git@git.banno.com:svn-temp\/${repo,,}.git/" -i .git/config
+    sed -e 's,'"$tempdir"','"$remote/${repo,,}.git"',' -i .git/config
 
     #push to remote
     git pull
@@ -74,26 +111,38 @@ then
     if [ "$?" -eq "0" ]
     then
       #remove lock file if it exists
-      if [ -a svnmigrate.lock ]
+      if [ -a $rootdir/svnmigrate.lock ]
       then
-        rm svnmigrate.lock
+        rm $rootdir/svnmigrate.lock
       fi
-
       #clear temp data
-      rm -rf temp/
+      rm -rf $tempdir
+      #remove the local copy of the repository
+      if [ "$remove" == "Yes" ]
+      then
+        rm -rf $rootdir/$repo
+      fi
       exit 0
     else
       echo "Unable to connect to remote. Check that the remote repository exists and attempt to push to master manually. See following error for more information."
-      exit $?
+      exit 11
     fi
   else
     echo "Local clone failed."
     rm -rf $repo
+    exit 11
   fi
 else ##Errors from missing name in translation file, or other
-  echo "Error detected. Check STDOUT for more details."a
+  check="$(tail -n 2 "$errorlog" | grep "not defined" | awk '{print $1}')"
+  if [ "$check" = "Author:" ] ##MISSING AUTHOR
+  then
+     #extract and format name, then add to authors list
+     un="$(tail -n 2 "$errorlog" | grep "not defined" | awk '{print $2}')"
+     echo "$un = $(echo $un | awk 'BEGIN{FS="."}{print $1" "$2}' | sed -e "s/\b\(.\)/\u\1/g") <$un@$emaildomain>" >> "$authorfile"
+     type=53
+  fi
   #create file to show where to begin on next run.
-  echo -n $repo > ~/svn/svnmigrate.lock
-  echo $dir >> ~/svn/svnmigrate.lock
-  exit $?
+  dir=$(pwd)
+  echo "$repo:$dir" > "$rootdir/svnmigrate.lock"
+  exit $type
 fi

@@ -8,14 +8,20 @@ do
   #inner loop, handles retries
   while [ "$q" -ne "0" ]
   do
+    echo "Processing: $line exit $q"
     if [ "$q" -eq "53" ] #name error
     then
       svnmigrate $line
+      q=$?
     elif [ "$q" -eq "11" ] #remote error
+    then
+      exit $q
+    elif [ "$q" -eq "127" ] #unk error
     then
       exit $q
     fi
   done
+  echo $line >> ~/donelist
   sed -i '1d' ~/runlist
 done < ~/runlist
 echo "Run Complete"
